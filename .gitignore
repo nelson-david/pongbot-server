@@ -1,0 +1,46 @@
+# ---- Uploaded & Processed Videos ----
+uploads/
+outputs/
+
+# ---- ML Model Weights ----
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+.eggs/
+
+# ---- Virtual Environment ----
+venv/
+env/
+.venv/
+
+# ---- Env & Secrets ----
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+._*
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Logs ----
+*.log
+logs/
