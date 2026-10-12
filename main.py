@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -71,6 +71,7 @@ def health_check():
 
 @app.post("/api/process")
 async def process_match_video_stream(
+    request: Request,
     file: Optional[UploadFile] = File(None),
     is_sample: bool = Form(False),
     p1_name: str = Form("Player-1"),
@@ -81,6 +82,20 @@ async def process_match_video_stream(
     enable_upscale: bool = Form(False),
 ):
     job_id = str(uuid.uuid4())[:8]
+
+    # Resolve dynamic base URL:
+    # 1. Environment variable PUBLIC_BASE_URL (if explicitly set and not localhost default)
+    # 2. X-Forwarded-Proto + Host headers from Reverse Proxy (e.g. Nginx, Cloudflare)
+    # 3. Direct request.base_url
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    forwarded_host = request.headers.get("x-forwarded-host", request.headers.get("host", ""))
+    
+    if os.environ.get("PUBLIC_BASE_URL") and os.environ.get("PUBLIC_BASE_URL") != "http://localhost:8000":
+        base_url = os.environ.get("PUBLIC_BASE_URL").rstrip("/")
+    elif forwarded_host:
+        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    else:
+        base_url = str(request.base_url).rstrip("/")
 
     MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
@@ -165,8 +180,8 @@ async def process_match_video_stream(
                 "result": {
                     "job_id": job_id,
                     "status": "COMPLETED",
-                    "video_url": f"{PUBLIC_BASE_URL}/outputs/{output_filename}",
-                    "raw_video_url": f"{PUBLIC_BASE_URL}/uploads/{filename}" if not is_sample else f"{PUBLIC_BASE_URL}/outputs/{output_filename}",
+                    "video_url": f"{base_url}/outputs/{output_filename}",
+                    "raw_video_url": f"{base_url}/uploads/{filename}" if not is_sample else f"{base_url}/outputs/{output_filename}",
                     "score_state": final_score,
                     "telemetry": {
                         "totalRallies": 24,
