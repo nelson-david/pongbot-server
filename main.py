@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 
 # Add engine directory to sys.path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -68,6 +68,21 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rst
 @app.get("/health")
 def health_check():
     return {"status": "ok", "engine": "ready", "version": "1.0.0"}
+
+@app.get("/api/download/{filename}")
+def download_output(filename: str):
+    """Serve output files with Content-Disposition: attachment for forced download."""
+    # Sanitize: prevent path traversal
+    safe_name = Path(filename).name
+    file_path = OUTPUTS_DIR / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        return JSONResponse(status_code=404, content={"error": "File not found"})
+    return FileResponse(
+        path=str(file_path),
+        filename=safe_name,
+        media_type="video/mp4",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
 
 @app.post("/api/process")
 async def process_match_video_stream(
