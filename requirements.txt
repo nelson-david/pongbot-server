@@ -1,0 +1,13 @@
+# =============================================
+# PongCast Server — Python Dependencies
+# =============================================
+# Web framework & ASGI server
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+python-multipart>=0.0.9
+
+# Error tracking & crash reporting
+sentry-sdk[fastapi]>=2.0.0
+
+# Engine dependencies (server imports engine code directly)
+-r ../engine/requirements.txt

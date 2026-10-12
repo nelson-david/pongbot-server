@@ -19,6 +19,22 @@ ENGINE_DIR = BASE_DIR / "engine"
 sys.path.insert(0, str(ENGINE_DIR))
 
 from main import run_engine
+from logger import setup_logger
+
+# Sentry Error Tracking (Only activates if SENTRY_DSN is configured)
+SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            traces_sample_rate=1.0,
+            profiles_sample_rate=1.0,
+            send_default_pii=False,
+            environment=os.environ.get("ENV", "production"),
+        )
+    except ImportError:
+        pass
 
 app = FastAPI(title="PongCast AI Broadcast Backend Server")
 
@@ -34,8 +50,13 @@ app.add_middleware(
 # Directories
 UPLOADS_DIR = BASE_DIR / "server" / "uploads"
 OUTPUTS_DIR = BASE_DIR / "server" / "outputs"
+LOGS_DIR = BASE_DIR / "server" / "logs"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Initialize production logger
+logger = setup_logger("server", log_dir=LOGS_DIR)
 
 # Mount static file endpoints
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
@@ -88,13 +109,21 @@ async def process_match_video_stream(
     output_filename = f"processed_{job_id}.mp4"
     output_path = OUTPUTS_DIR / output_filename
 
-    print(f"\n[JOB {job_id}] Started processing '{filename}' ({p1_name} vs {p2_name})", flush=True)
+    logger.info(f"[JOB {job_id}] Started processing '{filename}' ({p1_name} vs {p2_name})")
 
     # Stream event queue between engine thread and async generator
     loop = asyncio.get_running_loop()
     event_queue = asyncio.Queue()
 
     def thread_log_callback(level: str, msg: str, timestamp_str: str = ""):
+        # Route to server logger
+        if level in ("ERROR", "CRITICAL"):
+            logger.error(f"[JOB {job_id}] {msg}")
+        elif level == "WARNING":
+            logger.warning(f"[JOB {job_id}] {msg}")
+        else:
+            logger.info(f"[JOB {job_id}] {msg}")
+
         log_obj = {
             "type": "log",
             "log": {
@@ -136,7 +165,8 @@ async def process_match_video_stream(
                 "result": {
                     "job_id": job_id,
                     "status": "COMPLETED",
-                    "video_url": f"{PUBLIC_BASE_URL}/outputs/{output_filename}",                                                                          "raw_video_url": f"{PUBLIC_BASE_URL}/uploads/{filename}" if not is_sample else f"{PUBLIC_BASE_URL}/outputs/{output_filename}",
+                    "video_url": f"{PUBLIC_BASE_URL}/outputs/{output_filename}",
+                    "raw_video_url": f"{PUBLIC_BASE_URL}/uploads/{filename}" if not is_sample else f"{PUBLIC_BASE_URL}/outputs/{output_filename}",
                     "score_state": final_score,
                     "telemetry": {
                         "totalRallies": 24,
@@ -154,10 +184,15 @@ async def process_match_video_stream(
                 }
             }
             loop.call_soon_threadsafe(event_queue.put_nowait, done_obj)
-            print(f"[JOB {job_id}] Render complete: {output_filename}\n", flush=True)
+            logger.info(f"[JOB {job_id}] Render complete: {output_filename}")
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"[JOB {job_id}] Fatal engine processing exception: {e}")
+            if SENTRY_DSN:
+                try:
+                    import sentry_sdk
+                    sentry_sdk.capture_exception(e)
+                except Exception:
+                    pass
             err_obj = {"type": "error", "error": str(e)}
             loop.call_soon_threadsafe(event_queue.put_nowait, err_obj)
 
